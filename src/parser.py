@@ -89,7 +89,7 @@ def process_file(database, file):
 
 if __name__ == '__main__':
     lines = json.load(open('json_text.json', 'r'))
-    with open('result_file.txt', 'w') as f:
+    with open('result_file_2.txt', 'w') as f:
         for line in lines:
             res = process_file(config['database'], line)
             for word in res:
@@ -98,6 +98,6 @@ if __name__ == '__main__':
                 elif 'suggest' in word:
                     f.write(word['orig'] + '({})'.format(str(word['suggest'])) + ' ')
                 else:
-                    f.write(word['orig']  + ' ')
+                    f.write(word['orig'] + ' ')
             f.write('\n\n')
 
