@@ -1,5 +1,7 @@
 import logging
 import datetime
+import asyncio
+import time
 
 import requests
 from bs4 import BeautifulSoup
@@ -14,12 +16,13 @@ logger = logging.getLogger('ya_parser')
 
 url_starter = 'https://news.yandex.ru/'
 URL = 'https://news.yandex.ru/politics.html?from=index'
+section = URL.split('/')[-1].split('.')[0]
 
 jar = requests.cookies.RequestsCookieJar()
 db = DB('db.db', create_new=True)
 
 
-def get_page_stories_urls(url):
+def get_section_stories_urls(url):
     result = []
     response = requests.get(url, cookies=jar)
     if not response.ok:
@@ -39,7 +42,6 @@ def get_all_sources_url(url):
     if not response.ok:
         logger.warning('resp.getcode() != 200 or resp.geturl() != url')
     soup = BeautifulSoup(response.text, "html.parser")
-    print(soup.prettify())
     href = soup.find_all(
                          name='a',
                          attrs={'class': 'link link_theme_grey story__total i-bem'}
@@ -47,7 +49,7 @@ def get_all_sources_url(url):
     return url_starter + href
 
 
-def get_news_titles(url):
+def write_news_titles(url):
     result = []
     response = requests.get(url, cookies=jar)
     if not response.ok:
@@ -66,19 +68,16 @@ def get_news_titles(url):
         if title_hash not in result:
             result.append(dict(event_hash=event_hash, event_title=event_title, event_date=event_date,
                           title_hash=title_hash, title=title, agency=agency, time=time))
-
-    return result
-
-
-def parse_news_section(section_url):
-    stories_urls = get_page_stories_urls(section_url)
-    print(stories_urls[0])
-    all_sources_pages = get_all_sources_url(stories_urls[0])
-    print(all_sources_pages)
-    section = section_url.split('/')[-1].split('.')[0]
-    # all_sources_pages = [get_all_sources_url(x) for x in stories_urls]
-    # [get_news_titles(x) for x in all_sources_pages]
-    db.update_database(section, get_news_titles(all_sources_pages))
+    db.update_database(section, result)
 
 
-parse_news_section(URL)
+def parse_section(url):
+    stories = get_section_stories_urls(url)
+    for story in stories:
+        source = get_all_sources_url(story)
+        write_news_titles(source)
+
+
+start = time.time()
+parse_section(URL)
+print(time.time() - start)
