@@ -24,7 +24,7 @@ class DB:
 
     def create_tables(self):
         tables = {'events': ' (hash INT PRIMARY KEY, title TEXT, section TEXT, date DATE)',
-                  'news_titles': ' (hash INT PRIMARY KEY, title TEXT, time TEXT, event INT, agency INT)'}
+                  'news_titles': ' (hash INT PRIMARY KEY, title TEXT, time TEXT, event INT)'}
         try:
             for table_name, columns in tables.items():
                 sql = 'CREATE TABLE IF NOT EXISTS ' + table_name + columns
