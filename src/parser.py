@@ -25,24 +25,30 @@ class TextProcessor:
         self.db = RutezDB(database)
 
     # todo: add sentence borders
-    def morph_tokenize(self, text):
+    def morph_tokenize(self, text, stopwords=True):
         # text = re.sub('\W+|\d+', ' ', text).lower()
         result = []
         text = text.lower()
         tokens = self.morph_tokenizer(text)
-        [result.append({'orig': token.value, 'word': token.normalized, 'position': token.span})
-         for token in tokens]
+        if stopwords:
+            [result.append(
+                {'orig': token.value, 'word': token.normalized, 'position': token.span})
+                for token in tokens if token.normalized not in self.stop_words]
+        else:
+            [result.append(
+                {'orig': token.value, 'word': token.normalized, 'position': token.span})
+                for token in tokens]
         return result
 
     @staticmethod
-    def extract_text_from_htm(htm):
-        # with open(file) as htm:
-        soup = BeautifulSoup(htm, 'html.parser')
-        [s.extract() for s in soup('nomorph')]
-        [s.extract() for s in soup('title')]
-        [s.append('.') for s in soup(re.compile('^h[1-6]$'))]
-        text = soup.get_text().replace('\n', ' ').lstrip()
-        return text
+    def extract_text_from_htm(file):
+        with open(file) as htm:
+            soup = BeautifulSoup(htm, 'html.parser')
+            [s.extract() for s in soup('nomorph')]
+            [s.extract() for s in soup('title')]
+            [s.append('.') for s in soup(re.compile('^h[1-6]$'))]
+            text = soup.get_text().replace('\n', ' ').lstrip()
+            return text
 
     # todo: add better name
     def return_dict_tokens(self, tokens):
@@ -87,17 +93,10 @@ def process_file(database, file):
     return processor.find_relations(tokens)
 
 
+def main():
+    return NotImplementedError
+
+
 if __name__ == '__main__':
-    lines = json.load(open('json_text.json', 'r'))
-    with open('result_file_2.txt', 'w') as f:
-        for line in lines:
-            res = process_file(config['database'], line)
-            for word in res:
-                if 'meaning' in word:
-                    f.write(str.upper(word['orig']) + ' ')
-                elif 'suggest' in word:
-                    f.write(word['orig'] + '({})'.format(str(word['suggest'])) + ' ')
-                else:
-                    f.write(word['orig'] + ' ')
-            f.write('\n\n')
+    main()
 

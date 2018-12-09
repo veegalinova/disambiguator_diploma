@@ -33,3 +33,21 @@ class RutezDB:
             if idx not in meanings:
                 meanings[idx] = meaning
         return result, meanings
+
+    def query_word_meanings(self, ids):
+        query_params = ','.join(ids)
+        query = 'SELECT id_from, concepts.name, entry_id ' \
+                'FROM relations_from_meanings ' \
+                'INNER JOIN concepts on id_from = concepts.id ' \
+                'WHERE entry_id in ({})'
+        self.cursor.execute(query.format(query_params))
+        rows = self.cursor.fetchall()
+        result = {}
+        meanings = {}
+        for idx, meaning, entry_id in rows:
+            if entry_id not in result:
+                result[entry_id] = {idx: meaning}
+            else:
+                result[entry_id].update({idx: meaning})
+
+        return result
