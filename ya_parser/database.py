@@ -1,7 +1,5 @@
-import os
 import sqlite3
 import logging
-
 
 logger = logging.getLogger('db')
 
@@ -24,7 +22,7 @@ class DB:
 
     def create_tables(self):
         tables = {'events': ' (hash INT PRIMARY KEY, title TEXT, section TEXT, date DATE)',
-                  'news_titles': ' (hash INT PRIMARY KEY, title TEXT, time TEXT, event INT)'}
+                  'news_titles': ' (hash INT PRIMARY KEY, title TEXT, time TEXT, event INT, source TEXT)'}
         try:
             for table_name, columns in tables.items():
                 sql = 'CREATE TABLE IF NOT EXISTS ' + table_name + columns
@@ -52,3 +50,7 @@ class DB:
             self.insert_event((line['event_hash'], line['event_title'], section, line['event_date']))
             self.insert_title((line['title_hash'], line['title'], line['time'], line['event_hash']))
         self.conn.execute('COMMIT;')
+
+    def select_stats(self):
+        self.cur.execute('SELECT count(*) FROM news_titles UNION ALL SELECT count(*) FROM events')
+        return [x[0] for x in self.cur.fetchall()]
