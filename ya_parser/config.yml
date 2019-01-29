@@ -1,5 +1,5 @@
 url_starter: 'https://news.yandex.ru/'
-db_name: 'db.db'
+db_name: 'ya_parser/db3.db'
 verbose: True
 url_list:
     - 'http://news.yandex.ru/world.html'

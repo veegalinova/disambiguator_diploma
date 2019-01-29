@@ -1,3 +1,5 @@
+nmslib
+pandas
 cityhash
 requests
 backports.functools-lru-cache==1.3
