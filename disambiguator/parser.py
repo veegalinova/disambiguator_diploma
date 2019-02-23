@@ -1,126 +1,111 @@
 import re
 import string
+import json
+from collections import namedtuple
 
 import yaml
-import pymorphy2
 from bs4 import BeautifulSoup
 from nltk.corpus import stopwords
 from yargy.tokenizer import MorphTokenizer
-import pandas as pd
+from razdel import sentenize
 
 from disambiguator.db import RutezDB
 
-with open("config.yml", 'r') as ymlfile:
-    config = yaml.load(ymlfile)
+with open("config.yml", 'r') as config_file:
+    config = yaml.load(config_file)
+
+# todo: rise relation threshold to 3-4 to increase recall
+
+Item = namedtuple('Item', [
+    'id',
+    'text',
+    'span',
+    'normal_form',
+    'is_polysemous',
+    'is_stopword'
+])
 
 
-# todo : add named entities extraction?
 class TextProcessor:
-    def __init__(self, database=None):
-        self.morph = pymorphy2.MorphAnalyzer()
-        self.stop_words = stopwords.words('russian') + [s for s in string.punctuation]
-        self.morph_tokenizer = MorphTokenizer()
+    def __init__(self, database):
         self.db = RutezDB(database)
-
-    # todo: add sentence borders
-    def morph_tokenize(self, text, stopwords=False):
-        # text = re.sub('\W+|\d+', ' ', text).lower()
-        result = []
-        text = text.lower()
-        tokens = self.morph_tokenizer(text)
-        if stopwords:
-            [result.append(
-                {'orig': token.value, 'word': token.normalized, 'position': token.span})
-                for token in tokens if token.normalized not in self.stop_words]
-        else:
-            [result.append(
-                {'orig': token.value, 'word': token.normalized, 'position': token.span})
-                for token in tokens]
-        return result
+        self.morph_tokenizer = MorphTokenizer()
+        self.stop_words = stopwords.words('russian') + [s for s in string.punctuation]
 
     @staticmethod
-    def extract_text_from_htm(file):
-        with open(file) as htm:
-            soup = BeautifulSoup(htm, 'html.parser')
-            [s.extract() for s in soup('nomorph')]
-            [s.extract() for s in soup('title')]
-            [s.append('.') for s in soup(re.compile('^h[1-6]$'))]
-            text = soup.get_text().replace('\n', ' ').lstrip()
-            return text
+    def extract_text_from_html(text):
+        soup = BeautifulSoup(text, 'html.parser')
+        [s.extract() for s in soup('nomorph')]
+        [s.extract() for s in soup('title')]
+        [s.append('.') for s in soup(re.compile('^h[1-6]$'))]
+        text = soup.get_text().replace('\n', ' ').lstrip()
+        return text
 
-    # todo: add better name
-    def return_dict_tokens(self, tokens):
-        query_items = [token['word'] for token in tokens if token not in self.stop_words]
-        query = self.db.select_words_db_ids(query_items)
+    def morph_tokenize(self, text):
+        result = []
+        text = text.lower()
+        tokens = list(self.morph_tokenizer(text))
+        query_items = [token.normalized for token in tokens if token.value not in self.stop_words]
+        ids = self.db.select_words_db_ids(query_items)
         for token in tokens:
-            res = query.get(token['word'])
-            if res:
-                entry_id, is_poly = res
-                token['entry_id'] = entry_id
-                token['is_poly'] = is_poly
-        return tokens
+            id_, is_poly = ids.get(token.normalized, (None, None))
+            result.append(
+                Item(
+                    id_,
+                    token.value,
+                    token.span,
+                    token.normalized,
+                    is_poly,
+                    token.normalized is stopwords
+                )
+            )
+        return result
 
-    def find_relations(self, tokens):
-        query_items = [str(token['entry_id']) for token in tokens if token.get('is_poly') == 1]
-        query, meanings = self.db.select_close_words(query_items)
+    def predict_simple(self, json_corpus, window_size=3, skip_sentence_border=True, scorer=None):
+        corpus = json.load(open(json_corpus, 'r'))
+        result = []
+        for document in corpus:
+            tokens = self.morph_tokenize(document)
+            document_length = len(tokens)
+            sentences = list(sentenize(document))
 
-        for un_tok in tokens:
-            if un_tok.get('is_poly') == 0:
-                for token in tokens:
-                    if token.get('is_poly') == 1:
-                        close_words = query.get(token['entry_id'])
-                        if close_words.get(un_tok['entry_id']):
-                            if 'suggest' not in un_tok:
-                                un_tok['suggest'] = [{token['word'] : meanings.get(close_words.get(un_tok['entry_id']))}]
-                            else:
-                                if {token['word'] : meanings.get(close_words.get(un_tok['entry_id']))} not in un_tok['suggest']:
-                                    un_tok['suggest'].append({token['word'] : meanings.get(close_words.get(un_tok['entry_id']))})
+            query_items = [str(token.id) for token in tokens if token.is_polysemous == 1]
+            close_words, idx_to_meaning, \
+            midx_to_meaning, idx_to_word = self.db.select_close_words(query_items)
 
-                            if 'meaning' not in token:
-                                token['meaning'] = [{meanings.get(close_words.get(un_tok['entry_id'])):un_tok['word']}]
-                            else:
-                                if {meanings.get(close_words.get(un_tok['entry_id'])):un_tok['word']} not in token['meaning']:
-                                    token['meaning'].append({meanings.get(close_words.get(un_tok['entry_id'])):un_tok['word']})
+            for index, token in enumerate(tokens):
+                if token.is_polysemous == 1:
 
-        return tokens
+                    mono_words = []
+                    token_close_words = close_words.get(token.id)
+                    window_start = max(0, index - window_size)
+                    window_end = min(document_length, index + window_size)
 
+                    for window_token in tokens[window_start: window_end]:
+                        if not skip_sentence_border or window_token.text != '.':
+                            if window_token.is_polysemous == 0 and window_token.id in token_close_words:
+                                mono_words.append(window_token.id)
+                                containing_sentence = [sentence.text
+                                                       for sentence in sentences
+                                                       if sentence.start <= token.span[0]
+                                                       and sentence.stop >= token.span[1]
+                                                       ][0]
+                                meaning_id = [idx_to_meaning[mono_word] for mono_word in mono_words][0]
+                                meaning = midx_to_meaning[meaning_id]
+                                result.append(dict({'sentence': containing_sentence,
+                                                    'word': token.normal_form,
+                                                    'text_position': token.span,
+                                                    'close_word': window_token.normal_form,
+                                                    'meaning_id': meaning_id,
+                                                    'meaning': meaning
+                                                    }))
 
-def process_file(database, file):
-    processor = TextProcessor(database)
-    text = processor.extract_text_from_htm(file)
-    tokens = processor.morph_tokenize(text)
-    tokens = processor.return_dict_tokens(tokens)
-    return processor.find_relations(tokens)
+            json.dump(result, open('result.json', 'w'), ensure_ascii=False)
 
-
-def process_df(database, file):
-    processor = TextProcessor(database)
-    df = pd.read_csv(file)
-    texts = df['text1'].values + '. ' + df['text2'].values
-    result = []
-    with open('res_file.txt', 'w') as file:
-        for text in texts:
-            tokens = processor.morph_tokenize(text)
-            tokens = processor.return_dict_tokens(tokens)
-            relations = processor.find_relations(tokens)
-            for word in relations:
-                if 'meaning' in word:
-                    result.append(str(word['orig']).upper())
-                if 'suggest' in word:
-                    result.append(str(word['orig']) + ' ' + str(word['suggest']))
-                else:
-                    result.append(word['orig'])
-                file.write(result[-1])
-                file.write(' ')
-            file.write('\n')
-
-    return result
-
-
-def main():
-    process_df(config['database'], config['text'])
+    def score(self, prediction, ground_truth):
+        return
 
 
 if __name__ == '__main__':
-    main()
-
+    p = TextProcessor(config['database'])
+    p.predict_simple(config['corpus'])

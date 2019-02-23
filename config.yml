@@ -1,0 +1,3 @@
+database: 'data/rutez_db/rutez.db'
+text: 'data/para.csv'
+corpus: 'corpus.json'
