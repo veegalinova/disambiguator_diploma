@@ -7,9 +7,9 @@ class RutezDB:
 
     def select_words_db_ids(self, words):
         query_params = ','.join(['\'' + word.upper() + '\'' for word in words])
-        query = 'SELECT entry, name, is_polysemic ' \
-                'FROM text_entry ' \
-                'WHERE name in ({})'
+        query = """ SELECT entry, name, is_polysemic 
+                    FROM text_entry 
+                    WHERE name in ({}) """
         self.cursor.execute(query.format(query_params))
         rows = self.cursor.fetchall()
         result = {word.lower(): (idx, poly) for idx, word, poly in rows}
@@ -17,56 +17,59 @@ class RutezDB:
 
     def select_close_words(self, ids):
         query_params = ','.join(ids)
-        query = 'SELECT id_from, concepts.name, entry_id, entry_id_to, concepts_2.name ' \
-                'FROM relations_from_meanings ' \
-                'INNER JOIN concepts on id_from = concepts.id ' \
-                'INNER JOIN concepts concepts_2 on id_to = concepts_2.id ' \
-                'WHERE entry_id in ({})'
+        query = """ SELECT entry_id as base_id, 
+                           entry_id_to as close_word_id, 
+                           id_from as meaning_id, concepts.name as meaning_name
+                    FROM relations_from_meanings
+                    INNER JOIN concepts on id_from = concepts.id
+                    INNER JOIN text_entry text_entry_to on text_entry_to.entry = entry_id_to
+                    WHERE text_entry_to.is_polysemic = 0 and base_id in ({}) """
         self.cursor.execute(query.format(query_params))
         rows = self.cursor.fetchall()
+
         close_words = {}
-        idx_to_meaning = {}
-        midx_to_meaning = {}
-        idx_to_word = {}
+        close_words_to_meaning = {}
+        meaning_id_to_word = {}
 
-        for concept_id_from, meaning, meaning_entry_id, entry_id_to, name_to in rows:
-            if meaning_entry_id not in close_words:
-                close_words[meaning_entry_id] = [entry_id_to]
+        for base_id, close_word_id, meaning_id, meaning_name in rows:
+            if base_id not in close_words:
+                close_words[base_id] = [close_word_id]
             else:
-                close_words[meaning_entry_id].append(entry_id_to)
+                close_words[base_id].append(close_word_id)
 
-            if entry_id_to not in idx_to_word:
-                idx_to_word[entry_id_to] = name_to
+            if base_id not in close_words_to_meaning:
+                close_words_to_meaning[base_id] = {close_word_id: meaning_id}
+            else:
+                close_words_to_meaning[base_id].update({close_word_id: meaning_id})
 
-            if entry_id_to not in idx_to_meaning:
-                idx_to_meaning[entry_id_to] = meaning_entry_id
+            if meaning_id not in meaning_id_to_word:
+                meaning_id_to_word[meaning_id] = meaning_name
 
-            if meaning_entry_id not in midx_to_meaning:
-                midx_to_meaning[meaning_entry_id] = meaning
-
-        return close_words, idx_to_meaning, midx_to_meaning, idx_to_word
-
+        return close_words, close_words_to_meaning, meaning_id_to_word
 
     def select_poly_entries_meanings(self, words):
         query_params = ','.join(['\'' + word.upper() + '\'' for word in words])
-        query = 'SELECT entry ' \
-                'FROM text_entry ' \
-                'WHERE name in ({}) '
+        query = """ SELECT entry 
+                    FROM text_entry 
+                    WHERE name in ({}) """
         self.cursor.execute(query.format(query_params))
         ids = self.cursor.fetchall()
         if not ids:
             return None
         ids = [str(id[0]) for id in ids]
         query_params = ','.join(ids)
-        query = 'SELECT id_from, concepts.name, text_entry.name ' \
-                'FROM relations_from_meanings ' \
-                'INNER JOIN concepts on id_from = concepts.id ' \
-                'INNER JOIN text_entry on entry_id = text_entry.entry ' \
-                'WHERE entry_id in ({}) ' \
-                'ORDER BY entry_id '
+        query = """ SELECT DISTINCT entry_id as base_id, text_entry.name as base, 
+                        concepts.name as meaning, id_from as meaning_id 
+                    FROM relations_from_meanings 
+                    INNER JOIN concepts on id_from = concepts.id 
+                    INNER JOIN text_entry on entry_id = text_entry.entry 
+                    WHERE entry_id in ({}) """
         self.cursor.execute(query.format(query_params))
         rows = self.cursor.fetchall()
         result = {}
-        for idx, meaning, entry in rows:
-            result.update({idx: entry.replace(',', '*') + ': ' + meaning.replace(',', '*')})
+        for base_id, base, meaning, meaning_id in rows:
+            if base_id not in result:
+                result[base_id] = [base.replace(',', '*') + ': ' + meaning.replace(',', '*')]
+            else:
+                result[base_id].append(base.replace(',', '*') + ': ' + meaning.replace(',', '*'))
         return result

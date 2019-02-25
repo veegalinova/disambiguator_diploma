@@ -15,6 +15,8 @@ with open("config.yml", 'r') as config_file:
     config = yaml.load(config_file)
 
 # todo: rise relation threshold to 3-4 to increase recall
+# todo: unlimited text window for annotation
+# todo: simplest baseline
 
 Item = namedtuple('Item', [
     'id',
@@ -61,7 +63,7 @@ class TextProcessor:
             )
         return result
 
-    def predict_simple(self, json_corpus, window_size=3, skip_sentence_border=True, scorer=None):
+    def predict_simple(self, json_corpus, window_size=None, skip_sentence_border=True, scorer=None):
         corpus = json.load(open(json_corpus, 'r'))
         result = []
         for document in corpus:
@@ -70,16 +72,21 @@ class TextProcessor:
             sentences = list(sentenize(document))
 
             query_items = [str(token.id) for token in tokens if token.is_polysemous == 1]
-            close_words, idx_to_meaning, \
-            midx_to_meaning, idx_to_word = self.db.select_close_words(query_items)
+            close_words, close_words_to_meaning, meaning_id_to_word = self.db.select_close_words(query_items)
 
             for index, token in enumerate(tokens):
                 if token.is_polysemous == 1:
 
                     mono_words = []
                     token_close_words = close_words.get(token.id)
-                    window_start = max(0, index - window_size)
-                    window_end = min(document_length, index + window_size)
+
+                    if not window_size:
+                        window_start = 0
+                        window_end = document_length
+
+                    else:
+                        window_start = max(0, index - window_size)
+                        window_end = min(document_length, index + window_size)
 
                     for window_token in tokens[window_start: window_end]:
                         if not skip_sentence_border or window_token.text != '.':
@@ -90,16 +97,14 @@ class TextProcessor:
                                                        if sentence.start <= token.span[0]
                                                        and sentence.stop >= token.span[1]
                                                        ][0]
-                                meaning_id = [idx_to_meaning[mono_word] for mono_word in mono_words][0]
-                                meaning = midx_to_meaning[meaning_id]
+                                meaning_id = close_words_to_meaning[token.id][window_token.id]
+                                meaning = meaning_id_to_word[meaning_id]
                                 result.append(dict({'sentence': containing_sentence,
-                                                    'word': token.normal_form,
+                                                    'word': token.text,
                                                     'text_position': token.span,
-                                                    'close_word': window_token.normal_form,
-                                                    'meaning_id': meaning_id,
+                                                    'close_word': window_token.text,
                                                     'meaning': meaning
                                                     }))
-
             json.dump(result, open('result.json', 'w'), ensure_ascii=False)
 
     def score(self, prediction, ground_truth):
