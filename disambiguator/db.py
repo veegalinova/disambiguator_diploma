@@ -47,16 +47,17 @@ class RutezDB:
 
         return close_words, close_words_to_meaning, meaning_id_to_word
 
-    def select_poly_entries_meanings(self, words):
-        query_params = ','.join(['\'' + word.upper() + '\'' for word in words])
-        query = """ SELECT entry 
-                    FROM text_entry 
-                    WHERE name in ({}) """
-        self.cursor.execute(query.format(query_params))
-        ids = self.cursor.fetchall()
+    def select_poly_entries_meanings(self, words=None, ids=None):
+        if words:
+            query_params = ','.join(['\'' + word.upper() + '\'' for word in words])
+            query = """ SELECT entry 
+                        FROM text_entry 
+                        WHERE name in ({}) """
+            self.cursor.execute(query.format(query_params))
+            ids = self.cursor.fetchall()
+            ids = [str(id[0]) for id in ids]
         if not ids:
             return None
-        ids = [str(id[0]) for id in ids]
         query_params = ','.join(ids)
         query = """ SELECT DISTINCT entry_id as base_id, text_entry.name as base, 
                         concepts.name as meaning, id_from as meaning_id 
@@ -69,7 +70,7 @@ class RutezDB:
         result = {}
         for base_id, base, meaning, meaning_id in rows:
             if base_id not in result:
-                result[base_id] = [base.replace(',', '*') + ': ' + meaning.replace(',', '*')]
+                result[base_id] = [meaning]
             else:
-                result[base_id].append(base.replace(',', '*') + ': ' + meaning.replace(',', '*'))
+                result[base_id].append(meaning)
         return result

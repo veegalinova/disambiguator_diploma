@@ -1,3 +1,5 @@
 database: 'data/rutez_db/rutez.db'
 text: 'data/para.csv'
-corpus: 'corpus.json'
+corpus: 'data/corpus/lugovoy_corpus.json'
+output: 'florida_unlim.json'
+annotation: 'data/annotation/lugovoy_ann.csv'

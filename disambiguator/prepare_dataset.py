@@ -16,9 +16,9 @@ def extract_text_from_html(file):
 
 
 def main():
-    files = glob('data/preproc/*.txt')
+    files = glob('data/text_data/алроса/*.htm')
     corpus = [extract_text_from_html(file) for file in files]
-    json.dump(corpus, open('corpus.json', 'w'), ensure_ascii=False)
+    json.dump(corpus, open('alrosa_corpus.json', 'w'), ensure_ascii=False)
 
 
 if __name__ == '__main__':
