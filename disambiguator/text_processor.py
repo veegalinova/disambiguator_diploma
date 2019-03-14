@@ -9,7 +9,6 @@ from bs4 import BeautifulSoup
 from nltk.corpus import stopwords
 from yargy.tokenizer import MorphTokenizer
 from razdel import sentenize
-from tqdm import tqdm
 
 from disambiguator.db import RutezDB
 
@@ -17,15 +16,13 @@ with open("config.yml", 'r') as config_file:
     config = yaml.load(config_file)
 
 # todo: rise relation threshold to 3-4 to increase recall
-# todo: words in the same grammar form have same meaning?
-# todo: simple grid search
-# todo: vector model
-# todo: words only in different sentences
-# todo: remove words from text windows
+# todo: words in the same grammar form have same meaning ?
+# todo: words only in different sentences ?
 
 Item = namedtuple('Item', [
     'id',
     'text',
+    'type',
     'span',
     'normal_form',
     'is_polysemous',
@@ -56,24 +53,53 @@ class TextProcessor:
         ids = self.db.select_words_db_ids(query_items)
         for token in tokens:
             id_, is_poly = ids.get(token.normalized, (None, None))
-            result.append(
-                Item(
-                    id_,
-                    token.value,
-                    token.span,
-                    token.normalized,
-                    is_poly,
-                    token.normalized is stopwords
+            if token.value not in self.stop_words:
+                if hasattr(token, 'forms'):
+                    word_type = [form for form in list(token.forms[0].grams.values) if form.isupper()][0]
+                    if word_type in ['INFN', 'PRTF', 'GRND', 'PRTS']:
+                        word_type = 'VERB'
+                    if word_type == 'ADJF':
+                        word_type = 'ADJ'
+                result.append(
+                    Item(
+                        id_,
+                        token.value,
+                        word_type or None,
+                        token.span,
+                        token.normalized,
+                        is_poly,
+                        token.normalized is stopwords
+                    )
                 )
-            )
         return result
 
-    def predict_simple(self, json_corpus, window_size=10,
-                       inner_window_size=2, scorer=None,
-                       scorer_params=None, debug=False):
+    @staticmethod
+    def _make_text_window(idx, size, min_idx, max_idx, tokens, type_, skip=None):
+        window = []
+        window_start = max(min_idx, idx - size)
+        window_end = min(max_idx, idx + size)
+        if type_ == 'token':
+            window = tokens[window_start: window_end]
+        elif type_ == 'text':
+            window = [t.normal_form for t in tokens[window_start: window_end] if t != skip]
+        elif type_ == 'form':
+            window = [t.normal_form + '_' + t.type for t in tokens[window_start: window_end] if t != skip]
+        return window
+
+    # todo: implement k
+    @staticmethod
+    def _find_containing_sentences(sentences, token, k):
+        containing_sentence = [
+            sentence.text
+            for sentence in sentences
+            if sentence.start <= token.span[0] and sentence.stop >= token.span[1]
+        ][0]
+        return containing_sentence
+    
+    def predict_simple(self, json_corpus, window_size=10, context_window_size=2, scorer=None, scorer_params=None):
         corpus = json.load(open(json_corpus, 'r'))
         result = []
-        for document_index, document in enumerate(tqdm(corpus)):
+        for document_idx, document in enumerate(corpus):
             tokens = self.morph_tokenize(document)
             document_length = len(tokens)
             sentences = list(sentenize(document))
@@ -81,58 +107,40 @@ class TextProcessor:
             query_items = [str(token.id) for token in tokens if token.is_polysemous == 1]
             close_words, close_words_to_meaning, meaning_id_to_word = self.db.select_close_words(query_items)
 
-            for token_index, token in enumerate(tokens):
+            for token_idx, token in enumerate(tokens):
                 if token.is_polysemous == 1:
-                    containing_sentence = [
-                        sentence.text
-                        for sentence in sentences
-                        if sentence.start <= token.span[0]
-                           and sentence.stop >= token.span[1]
-                    ][0]
+                    containing_sentence = self._find_containing_sentences(sentences, token, k=1)
                     token_close_words = close_words.get(token.id)
+                    search_window = self._make_text_window(
+                        token_idx, window_size, 0, document_length, tokens, 'token'
+                    )
+                    token_context_window = self._make_text_window(
+                        token_idx, context_window_size, 0, document_length, tokens, 'form', skip=token
+                    )
 
-                    window_start = max(0, token_index - window_size)
-                    window_end = min(document_length, token_index + window_size)
-                    text_window = tokens[window_start: window_end]
-
-                    inner_window_start = max(0, token_index - inner_window_size)
-                    inner_window_end = min(document_length, token_index + inner_window_size)
-                    inner_window = [token.text for token in tokens[inner_window_start: inner_window_end]]
-
-                    for window_token_index, window_token in enumerate(text_window):
-                        if window_token.is_polysemous == 0 and window_token.id in token_close_words:
-                            meaning_id = close_words_to_meaning[token.id][window_token.id]
+                    for search_token_idx, search_token in enumerate(search_window):
+                        if search_token.is_polysemous == 0 and search_token.id in token_close_words:
+                            meaning_id = close_words_to_meaning[token.id][search_token.id]
                             meaning = meaning_id_to_word[meaning_id]
-
-                            token_window_start = max(
-                                0, window_start + window_token_index - inner_window_size
+                            
+                            search_context_window = self._make_text_window(
+                                search_token_idx, context_window_size, 0, document_length, tokens, 'form', search_token
                             )
-                            token_window_end = min(
-                                document_length, window_start + window_token_index + inner_window_size
-                            )
-                            token_window = [token.text for token in tokens[token_window_start: token_window_end]]
-
+                            
                             if scorer:
-                                score = scorer(token_window, inner_window, scorer_params)
+                                score = scorer(search_context_window, token_context_window, scorer_params)
                             else:
                                 score = 0
 
-                            if debug:
-                                meanings = self.db.select_poly_entries_meanings(ids=[str(token.id)])
-                                result.append(dict(
-                                    document=document_index, sentence=containing_sentence, word_index=token.id,
-                                    word=token.text, text_position=str(token.span), close_word_index=window_token.id,
-                                    close_word=window_token.text, meaning_id=meaning_id,
-                                    meaning=meaning, meanings=meanings, baseline=score
-                                ))
-
-                            else:
-                                result.append(dict(
-                                    document=document_index,
-                                    text_position=str(token.span),
+                            result.append(
+                                dict(
+                                    document=document_idx,
+                                    text_position=str(list(token.span)),
                                     meaning=meaning,
-                                    baseline=score
-                                ))
+                                    baseline=score,
+                                    text=containing_sentence
+                                )
+                            )
 
             result = pd.DataFrame(result)
             result.drop_duplicates(inplace=True)
@@ -142,12 +150,20 @@ class TextProcessor:
     def precision_recall_score(df_pred, df_true, score_threshold=0):
         merged = df_true.merge(df_pred, on=['document', 'text_position'])
 
-        true_pred = merged[(merged['meaning'] == merged['annotation']) &
-                           (merged['baseline'] > score_threshold)].shape[0]
-        total_pred = merged[merged['baseline'] > 0].shape[0]
+        if score_threshold == 0:
+            true_pred = merged[merged['meaning'] == merged['annotation']].shape[0]
+            total_pred = merged.shape[0]
+        else:
+            true_pred = merged[(merged['meaning'] == merged['annotation']) &
+                               (merged['baseline'] >= score_threshold)].shape[0]
+            total_pred = merged[merged['baseline'] >= score_threshold].shape[0]
+        print(true_pred, total_pred)
         precision = true_pred * 100 / total_pred
 
         merged.drop('meaning', axis=1, inplace=True)
         merged.drop_duplicates(inplace=True)
-        recall = merged.shape[0] * 100 / df_true.shape[0]
-        return precision, recall
+
+        # todo: fix?
+        recall = total_pred * 100 / df_true.shape[0]
+        f_score = 2 * precision * recall / (precision + recall)
+        return precision, recall, f_score
