@@ -16,9 +16,7 @@ from disambiguator.db import RutezDB
 with open("config.yml", 'r') as config_file:
     config = yaml.load(config_file)
 
-# todo: rise relation threshold to 3-4 to increase recall
-# todo: words in the same grammar form have same meaning ?
-# todo: words only in different sentences ?
+word_type_mapping = config['word_type_mapping']
 
 Item = namedtuple('Item', [
     'id',
@@ -54,36 +52,15 @@ class TextProcessor:
             result.extend(text[start: stop].lower().split(' '))
         return result
 
-    def morph_tokenize(self, text):
-        result = []
-        named_entities = self._find_named_entities(text)
-        text = text.lower()
-        tokens = list(self.morph_tokenizer(text))
-
-        tokens = [token for token in tokens if token.value not in self.stop_words and token.value not in named_entities]
-        query_items = [token.normalized for token in tokens]
-        ids = self.db.select_words_db_ids(query_items)
-        for token in tokens:
-            id_, is_poly = ids.get(token.normalized, (None, None))
-            if token.value not in self.stop_words:
-                if hasattr(token, 'forms'):
-                    word_type = [form for form in list(token.forms[0].grams.values) if form.isupper()][0]
-                    if word_type in ['INFN', 'PRTF', 'GRND', 'PRTS']:
-                        word_type = 'VERB'
-                    if word_type == 'ADJF':
-                        word_type = 'ADJ'
-                result.append(
-                    Item(
-                        id_,
-                        token.value,
-                        word_type or None,
-                        token.span,
-                        token.normalized,
-                        is_poly,
-                        token.normalized is stopwords
-                    )
-                )
-        return result
+    # todo: implement k
+    @staticmethod
+    def _find_containing_sentences(sentences, token, k):
+        containing_sentence = [
+            sentence.text
+            for sentence in sentences
+            if sentence.start <= token.span[0] and sentence.stop >= token.span[1]
+        ][0]
+        return containing_sentence
 
     @staticmethod
     def _make_text_window(idx, size, min_idx, max_idx, tokens, type_, skip=None):
@@ -98,24 +75,46 @@ class TextProcessor:
             window = [t.normal_form + '_' + t.type for t in tokens[window_start: window_end] if t != skip]
         return window
 
-    # todo: implement k
-    @staticmethod
-    def _find_containing_sentences(sentences, token, k):
-        containing_sentence = [
-            sentence.text
-            for sentence in sentences
-            if sentence.start <= token.span[0] and sentence.stop >= token.span[1]
-        ][0]
-        return containing_sentence
+    def morph_tokenize(self, text):
+        result = []
+        named_entities = self._find_named_entities(text)
+        text = text.lower()
+        tokens = list(self.morph_tokenizer(text))
+
+        tokens = [token for token in tokens if token.value not in self.stop_words and token.value not in named_entities]
+        query_items = [token.normalized for token in tokens]
+        ids = self.db.select_words_db_ids(query_items)
+        for token in tokens:
+            id_, is_poly = ids.get(token.normalized, (None, None))
+            if token.value not in self.stop_words:
+                if hasattr(token, 'forms'):
+                    word_type = [
+                        word_type_mapping.get(form, form)
+                        for form in list(token.forms[0].grams.values)
+                        if form.isupper()
+                    ][0]
+
+                result.append(
+                    Item(
+                        id_,
+                        token.value,
+                        word_type or None,
+                        token.span,
+                        token.normalized,
+                        is_poly,
+                        token.normalized is stopwords
+                    )
+                )
+        return result
     
-    def predict_simple(self, json_corpus, window_size=10, context_window_size=2, scorer=None, scorer_params=None):
+    def predict_simple(self, json_corpus, scorer, window_size=10, context_window_size=2, scorer_params=None):
         corpus = json.load(open(json_corpus, 'r'))
         result = []
+
         for document_idx, document in enumerate(corpus):
             tokens = self.morph_tokenize(document)
             document_length = len(tokens)
             sentences = list(sentenize(document))
-
             query_items = [str(token.id) for token in tokens if token.is_polysemous == 1]
             close_words, close_words_to_meaning, meaning_id_to_word = self.db.select_close_words(query_items)
 
@@ -133,6 +132,7 @@ class TextProcessor:
 
                     for search_token_idx, search_token in enumerate(search_window):
                         if search_token.is_polysemous == 0 and search_token.id in token_close_words:
+
                             meaning_id = close_words_to_meaning[token.id][search_token.id]
                             meaning = meaning_id_to_word[meaning_id]
                             
@@ -141,10 +141,7 @@ class TextProcessor:
                                 document_length, search_window, 'form', search_token
                             )
 
-                            if scorer:
-                                score = scorer(search_context_window, token_context_window, scorer_params)
-                            else:
-                                score = 0
+                            score = scorer(search_context_window, token_context_window, scorer_params)
 
                             result.append(
                                 dict(
@@ -157,15 +154,12 @@ class TextProcessor:
                             )
 
             result = pd.DataFrame(result)
-            result.drop_duplicates(inplace=True)
+            print(result.duplicated().sum())
             return result
 
     @staticmethod
     def precision_recall_score(df_pred, df_true, score_threshold=0):
         merged = df_true.merge(df_pred, on=['document', 'text_position'])
-
-        merged.to_csv('m.csv', index=False)
-
         if score_threshold == 0:
             true_pred = merged[merged['meaning'] == merged['annotation']].shape[0]
             total_pred = merged.shape[0]
@@ -174,11 +168,8 @@ class TextProcessor:
                                (merged['baseline'] >= score_threshold)].shape[0]
             total_pred = merged[merged['baseline'] >= score_threshold].shape[0]
         precision = true_pred * 100 / total_pred
-
         merged.drop('meaning', axis=1, inplace=True)
         merged.drop_duplicates(inplace=True)
-
-        # todo: fix?
         recall = total_pred * 100 / df_true.shape[0]
         f_score = 2 * precision * recall / (precision + recall)
         return precision, recall, f_score

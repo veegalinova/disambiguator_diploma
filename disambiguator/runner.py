@@ -74,8 +74,11 @@ if __name__ == '__main__':
         inner_window_size=[4],
         scorer=[scorer],
         scorer_params=['average'],
-        threshold=[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7]
+        threshold=[0.4]
     )
+
+    # 0.4
+
     processor = TextProcessor(config['database'])
     true = pd.read_csv(config['annotation'])
     true['text_position'] = true['text_position'].apply(str)
