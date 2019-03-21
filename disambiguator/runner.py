@@ -9,7 +9,7 @@ from disambiguator.text_processor import *
 
 def intersection_scorer(w1, w2, threshold):
     intersection = list(set(w1) & set(w2))
-    return int(len(intersection) >= threshold)
+    return len(intersection)
 
 
 class W2VScorer:
@@ -38,7 +38,7 @@ class W2VScorer:
     @staticmethod
     def cosine_similarity(vector1, vector2):
         similarity = (vector1 * vector2).sum() / (np.linalg.norm(vector1) * np.linalg.norm(vector2))
-        return abs(similarity)
+        return similarity
 
     def scorer(self, context1, context2, params):
         strategy, window_size = params
@@ -47,13 +47,13 @@ class W2VScorer:
             try:
                 vector1.append(self.model.get_vector(word))
             except:
-                vector1.append(np.zeros(300,))
+                vector1.append(np.zeros((300,)))
 
         for word in context2:
             try:
                 vector2.append(self.model.get_vector(word))
             except:
-                vector1.append(np.zeros(300,))
+                vector2.append(np.zeros((300,)))
 
         if strategy == 'average':
             vector1 = self.average(np.array(vector1))
@@ -71,9 +71,10 @@ if __name__ == '__main__':
     best_params, best_score, best_f = 0, 0, 0
     grid_params = dict(
         window_size=[15],
-        inner_window_size=[2, 3, 4],
+        inner_window_size=[4],
         scorer=[scorer],
-        scorer_params=['concat']
+        scorer_params=['average'],
+        threshold=[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7]
     )
     processor = TextProcessor(config['database'])
     true = pd.read_csv(config['annotation'])
@@ -87,7 +88,7 @@ if __name__ == '__main__':
             scorer=params['scorer'],
             scorer_params=[params['scorer_params'], params['inner_window_size']]
         )
-        precision, recall, f = processor.precision_recall_score(pred, true, score_threshold=0.1)
+        precision, recall, f = processor.precision_recall_score(pred, true, score_threshold=params['threshold'])
         print(params, precision, recall, f)
         if precision > best_f:
             best_f = precision

@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup
 from nltk.corpus import stopwords
 from yargy.tokenizer import MorphTokenizer
 from razdel import sentenize
+from natasha import NamesExtractor
 
 from disambiguator.db import RutezDB
 
@@ -34,6 +35,7 @@ class TextProcessor:
     def __init__(self, database):
         self.db = RutezDB(database)
         self.morph_tokenizer = MorphTokenizer()
+        self.ne_extractor = NamesExtractor()
         self.stop_words = stopwords.words('russian') + [s for s in string.punctuation]
 
     @staticmethod
@@ -45,11 +47,21 @@ class TextProcessor:
         text = soup.get_text().replace('\n', ' ').lstrip()
         return text
 
+    def _find_named_entities(self, text):
+        result = []
+        for match in self.ne_extractor(text):
+            start, stop = match.span
+            result.extend(text[start: stop].lower().split(' '))
+        return result
+
     def morph_tokenize(self, text):
         result = []
+        named_entities = self._find_named_entities(text)
         text = text.lower()
         tokens = list(self.morph_tokenizer(text))
-        query_items = [token.normalized for token in tokens if token.value not in self.stop_words]
+
+        tokens = [token for token in tokens if token.value not in self.stop_words and token.value not in named_entities]
+        query_items = [token.normalized for token in tokens]
         ids = self.db.select_words_db_ids(query_items)
         for token in tokens:
             id_, is_poly = ids.get(token.normalized, (None, None))
@@ -77,9 +89,9 @@ class TextProcessor:
     def _make_text_window(idx, size, min_idx, max_idx, tokens, type_, skip=None):
         window = []
         window_start = max(min_idx, idx - size)
-        window_end = min(max_idx, idx + size)
+        window_end = min(max_idx, idx + size + 1)
         if type_ == 'token':
-            window = tokens[window_start: window_end]
+            window = [t for t in tokens[window_start: window_end] if t != skip]
         elif type_ == 'text':
             window = [t.normal_form for t in tokens[window_start: window_end] if t != skip]
         elif type_ == 'form':
@@ -111,6 +123,7 @@ class TextProcessor:
                 if token.is_polysemous == 1:
                     containing_sentence = self._find_containing_sentences(sentences, token, k=1)
                     token_close_words = close_words.get(token.id)
+
                     search_window = self._make_text_window(
                         token_idx, window_size, 0, document_length, tokens, 'token'
                     )
@@ -124,9 +137,10 @@ class TextProcessor:
                             meaning = meaning_id_to_word[meaning_id]
                             
                             search_context_window = self._make_text_window(
-                                search_token_idx, context_window_size, 0, document_length, tokens, 'form', search_token
+                                search_token_idx, context_window_size, 0,
+                                document_length, search_window, 'form', search_token
                             )
-                            
+
                             if scorer:
                                 score = scorer(search_context_window, token_context_window, scorer_params)
                             else:
@@ -150,6 +164,8 @@ class TextProcessor:
     def precision_recall_score(df_pred, df_true, score_threshold=0):
         merged = df_true.merge(df_pred, on=['document', 'text_position'])
 
+        merged.to_csv('m.csv', index=False)
+
         if score_threshold == 0:
             true_pred = merged[merged['meaning'] == merged['annotation']].shape[0]
             total_pred = merged.shape[0]
@@ -157,7 +173,6 @@ class TextProcessor:
             true_pred = merged[(merged['meaning'] == merged['annotation']) &
                                (merged['baseline'] >= score_threshold)].shape[0]
             total_pred = merged[merged['baseline'] >= score_threshold].shape[0]
-        print(true_pred, total_pred)
         precision = true_pred * 100 / total_pred
 
         merged.drop('meaning', axis=1, inplace=True)
