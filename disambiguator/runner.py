@@ -1,4 +1,5 @@
 import zipfile
+import logging
 
 import gensim
 import numpy as np
@@ -6,10 +7,14 @@ from sklearn.model_selection import ParameterGrid
 
 from disambiguator.text_processor import *
 
+logging.basicConfig(level=logging.WARNING)
+logger = logging.getLogger('runner')
+logger.setLevel(level=logging.INFO)
 
-def intersection_scorer(w1, w2, threshold):
+
+def intersection_scorer(w1, w2):
     intersection = list(set(w1) & set(w2))
-    return len(intersection)
+    return len(intersection) / max(len(w1), len(w2))
 
 
 class W2VScorer:
@@ -77,8 +82,6 @@ if __name__ == '__main__':
         threshold=[0.4]
     )
 
-    # 0.4
-
     processor = TextProcessor(config['database'])
     true = pd.read_csv(config['annotation'])
     true['text_position'] = true['text_position'].apply(str)
@@ -91,11 +94,13 @@ if __name__ == '__main__':
             scorer=params['scorer'],
             scorer_params=[params['scorer_params'], params['inner_window_size']]
         )
-        precision, recall, f = processor.precision_recall_score(pred, true, score_threshold=params['threshold'])
-        print(params, precision, recall, f)
+        precision, recall, f1 = processor.precision_recall_score(pred, true, score_threshold=params['threshold'])
+        params['scorer'] = params['scorer'].__name__
+        logger.info(params, precision, recall, f1)
         if precision > best_f:
             best_f = precision
             best_score = precision, recall
             best_params = params
 
-    print(best_params, best_score)
+    logger.info(best_params)
+    logger.info(best_score)

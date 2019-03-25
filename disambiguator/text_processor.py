@@ -154,7 +154,6 @@ class TextProcessor:
                             )
 
             result = pd.DataFrame(result)
-            print(result.duplicated().sum())
             return result
 
     @staticmethod

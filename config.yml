@@ -1,12 +1,13 @@
 database: 'data/rutez_db/rutez.db'
+rutez_dir: 'data/rutez_xml/'
 text: 'data/para.csv'
 corpus: 'data/corpus/florida_corpus.json'
 annotation: 'data/annotation/florida_ann.csv'
 model: 'data/models/180.zip'
-word_type_mapping : {
-    'INFN': 'VERB',
-    'PRTF': 'VERB',
-    'GRND': 'VERB',
-    'PRTS': 'VERB',
-    'ADJF': 'ADJ'
-}
+
+word_type_mapping:
+  INFN: VERB
+  PRTF: VERB
+  GRND: VERB
+  PRTS: VERB
+  ADJF: ADJ
