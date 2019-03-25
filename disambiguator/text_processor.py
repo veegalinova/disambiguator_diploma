@@ -107,7 +107,8 @@ class TextProcessor:
                 )
         return result
     
-    def predict_simple(self, json_corpus, scorer, window_size=10, context_window_size=2, scorer_params=None):
+    def predict_simple(self, json_corpus, scorer, window_size=10, context_window_size=2,
+                       max_relation_order=4, scorer_params=None):
         corpus = json.load(open(json_corpus, 'r'))
         result = []
 
@@ -116,7 +117,8 @@ class TextProcessor:
             document_length = len(tokens)
             sentences = list(sentenize(document))
             query_items = [str(token.id) for token in tokens if token.is_polysemous == 1]
-            close_words, close_words_to_meaning, meaning_id_to_word = self.db.select_close_words(query_items)
+            close_words, close_words_to_meaning, meaning_id_to_word = \
+                self.db.select_close_words(query_items, max_relation_order)
 
             for token_idx, token in enumerate(tokens):
                 if token.is_polysemous == 1:
@@ -156,8 +158,7 @@ class TextProcessor:
             result = pd.DataFrame(result)
             return result
 
-    @staticmethod
-    def precision_recall_score(df_pred, df_true, score_threshold=0):
+    def precision_recall_score(self, df_pred, df_true, score_threshold=0):
         merged = df_true.merge(df_pred, on=['document', 'text_position'])
         if score_threshold == 0:
             true_pred = merged[merged['meaning'] == merged['annotation']].shape[0]
@@ -171,4 +172,5 @@ class TextProcessor:
         merged.drop_duplicates(inplace=True)
         recall = total_pred * 100 / df_true.shape[0]
         f_score = 2 * precision * recall / (precision + recall)
+
         return precision, recall, f_score

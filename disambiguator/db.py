@@ -7,7 +7,7 @@ class RutezDB:
 
     def select_words_db_ids(self, words):
         query_params = ','.join(['\'' + word.upper() + '\'' for word in words])
-        query = """ SELECT entry, name, is_polysemic 
+        query = """ SELECT entry_id, name, is_polysemic 
                     FROM text_entry 
                     WHERE name in ({}) """
         self.cursor.execute(query.format(query_params))
@@ -15,16 +15,17 @@ class RutezDB:
         result = {word.lower(): (idx, poly) for idx, word, poly in rows}
         return result
 
-    def select_close_words(self, ids):
+    def select_close_words(self, ids, max_relation_order=4):
         query_params = ','.join(ids)
-        query = """ SELECT entry_id as base_id, 
+        query = """ SELECT close_words.entry_id as base_id, 
                            entry_id_to as close_word_id, 
-                           id_from as meaning_id, concepts.name as meaning_name
-                    FROM relations_from_meanings
+                           close_words.id_from as meaning_id, 
+                           concepts.name as meaning_name
+                    FROM close_words
                     INNER JOIN concepts on id_from = concepts.id
-                    INNER JOIN text_entry text_entry_to on text_entry_to.entry = entry_id_to
-                    WHERE text_entry_to.is_polysemic = 0 and base_id in ({}) """
-        self.cursor.execute(query.format(query_params))
+                    INNER JOIN text_entry text_entry_to on text_entry_to.entry_id = entry_id_to
+                    WHERE close_words.relation_order <= {0} and base_id in ({1}) """
+        self.cursor.execute(query.format(max_relation_order, query_params))
         rows = self.cursor.fetchall()
 
         close_words = {}
@@ -50,7 +51,7 @@ class RutezDB:
     def select_poly_entries_meanings(self, words=None, ids=None):
         if words:
             query_params = ','.join(['\'' + word.upper() + '\'' for word in words])
-            query = """ SELECT entry 
+            query = """ SELECT entry_id
                         FROM text_entry 
                         WHERE name in ({}) """
             self.cursor.execute(query.format(query_params))
@@ -59,11 +60,11 @@ class RutezDB:
         if not ids:
             return None
         query_params = ','.join(ids)
-        query = """ SELECT DISTINCT entry_id as base_id, text_entry.name as base, 
-                        concepts.name as meaning, id_from as meaning_id 
-                    FROM relations_from_meanings 
+        query = """ SELECT DISTINCT close_words.entry_id as base_id, text_entry.name as base, 
+                        concepts.name as meaning, close_words.id_from as meaning_id 
+                    FROM close_words 
                     INNER JOIN concepts on id_from = concepts.id 
-                    INNER JOIN text_entry on entry_id = text_entry.entry 
+                    INNER JOIN text_entry on entry_id = text_entry.entry_id
                     WHERE entry_id in ({}) """
         self.cursor.execute(query.format(query_params))
         rows = self.cursor.fetchall()

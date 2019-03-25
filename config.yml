@@ -1,9 +1,9 @@
-database: 'data/rutez_db/rutez.db'
+database: 'data/rutez_db/rutez_test.db'
 rutez_dir: 'data/rutez_xml/'
 text: 'data/para.csv'
 corpus: 'data/corpus/florida_corpus.json'
 annotation: 'data/annotation/florida_ann.csv'
-model: 'data/models/180.zip'
+model: 'data/models/tayga_upos_skipgram_300_2_2019.zip'
 
 word_type_mapping:
   INFN: VERB
