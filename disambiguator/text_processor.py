@@ -116,7 +116,7 @@ class TextProcessor:
         corpus = json.load(open(json_corpus, 'r'))
         result = []
 
-        for document_idx, document in enumerate(tqdm(corpus)):
+        for document_idx, document in enumerate(corpus):
             tokens = self.morph_tokenize(document)
             document_length = len(tokens)
             sentences = list(sentenize(document))
@@ -156,6 +156,7 @@ class TextProcessor:
                                     token_context_window=token_context_window
                                 )
                             )
+            break
         result = pd.DataFrame(result)
         return result
 
@@ -174,7 +175,8 @@ class TextProcessor:
                 scorer,
                 scorer_params,
                 prediction[['search_context_window', 'token_context_window']].values
-            )
+            ),
+            name='score'
         )
         prediction.drop(['search_context_window', 'token_context_window'], axis=1, inplace=True)
         merged = df_true.merge(prediction, on=['document', 'text_position'])
@@ -190,7 +192,7 @@ class TextProcessor:
         if total_pred == 0:
             return 0, 0, 0
 
-        logger.info(total_pred.shape[0])
+        logger.info(total_pred)
         precision = true_pred * 100 / total_pred
         merged.drop('meaning', axis=1, inplace=True)
         merged.drop_duplicates(inplace=True)

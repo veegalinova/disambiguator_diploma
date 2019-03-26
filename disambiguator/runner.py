@@ -130,10 +130,10 @@ if __name__ == '__main__':
                 window_size=params['window_size'],
                 context_window_size=params['context_window_size']
             )
-            for strategy, scorer in scorers.items():
+            for strategy, scorer_ in scorers.items():
                 scorer_params = strategy, params['context_window_size']
                 precision, recall, f1 = processor.precision_recall_score(
-                    scorer=scorer,
+                    scorer=scorer_,
                     scorer_params=scorer_params,
                     df_pred=prediction,
                     df_true=annotation,
@@ -153,21 +153,17 @@ if __name__ == '__main__':
                     )
                 )
 
-                logger.info(params)
-                logger.info(precision)
-                logger.info(recall)
-
                 if precision > best_f:
                     best_f = precision
                     best_score = precision, recall
                     best_params = params
 
-            scores = pd.DataFrame(scores)
-            scores.to_csv(config['log_file'])
-
-            logger.info(model)
-            logger.info(best_params)
-            logger.info(best_score)
-
+        logger.info(model)
         logger.info(best_params)
         logger.info(best_score)
+
+    scores = pd.DataFrame(scores)
+    scores.to_csv(config['log_file'])
+
+    logger.info(best_params)
+    logger.info(best_score)
