@@ -97,7 +97,7 @@ class DBCreator:
         return text
 
     def load_concepts(self):
-        with open(join(config['rutez_dir'], 'concepts.xml'), 'r') as concepts:
+        with open(join(config['rutez_dir'], 'concepts.xml'), 'r', encoding="utf-8") as concepts:
             self.cursor.execute('begin')
             for _ in concepts:
                 line = self._file_window(concepts, 5)
@@ -110,7 +110,7 @@ class DBCreator:
             self.cursor.execute('commit')
 
     def load_relations(self):
-        with open(join(config['rutez_dir'], 'relations.xml'), 'r') as relations:
+        with open(join(config['rutez_dir'], 'relations.xml'), 'r', encoding="utf-8") as relations:
             self.cursor.execute('begin')
             for line in relations:
                 from_search = FROM_PATTERN.search(line) or None
@@ -129,7 +129,7 @@ class DBCreator:
             self.cursor.execute('commit')
 
     def load_synonyms(self):
-        with open(join(config['rutez_dir'], 'synonyms.xml'), 'r') as synonyms:
+        with open(join(config['rutez_dir'], 'synonyms.xml'), 'r', encoding="utf-8") as synonyms:
             self.cursor.execute('begin')
             for line in synonyms:
                 id_search = ID_PATTERN.search(line) or None
@@ -168,7 +168,7 @@ class DBCreator:
 
     def load_entries(self):
         self.cursor.execute('begin')
-        with open(join(config['rutez_dir'], 'text_entry.xml'), 'r') as text_entry:
+        with open(join(config['rutez_dir'], 'text_entry.xml'), 'r', encoding="utf-8") as text_entry:
             for _ in text_entry:
                 line = self._file_window(text_entry, 7)
                 search_line = TEXT_ENTRY_PATTERN.search(line)
