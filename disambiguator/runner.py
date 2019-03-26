@@ -110,10 +110,10 @@ if __name__ == '__main__':
 
     best_params, best_score, best_f = 0, 0, 0
     grid_params = dict(
-        window_size=[10],
-        context_window_size=[2],
-        max_relation_order=[2],
-        threshold=[0.4]
+        window_size=[10, 15, 20],
+        context_window_size=[2, 3, 4, 5, 10],
+        max_relation_order=[2, 3, 4],
+        threshold=[0.3, 0.4, 0.5, 0.6, 0.7]
     )
 
     for model in models:
@@ -153,8 +153,8 @@ if __name__ == '__main__':
                     )
                 )
 
-                if precision > best_f:
-                    best_f = precision
+                if f1 > best_f:
+                    best_f = f1
                     best_score = precision, recall
                     best_params = params
 
