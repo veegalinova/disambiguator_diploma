@@ -156,7 +156,6 @@ class TextProcessor:
                                     token_context_window=token_context_window
                                 )
                             )
-            break
         result = pd.DataFrame(result)
         return result
 
