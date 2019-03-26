@@ -113,7 +113,7 @@ class TextProcessor:
         return result
     
     def predict_simple(self, json_corpus, window_size=10, context_window_size=2, max_relation_order=4):
-        corpus = json.load(open(json_corpus, 'r'), encoding='utf-8')
+        corpus = json.load(open(json_corpus, 'r', encoding='utf-8'))
         result = []
 
         for document_idx, document in enumerate(corpus):
