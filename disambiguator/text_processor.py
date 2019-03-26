@@ -1,6 +1,8 @@
 import re
 import string
 import json
+import logging
+from tqdm import tqdm
 from collections import namedtuple
 
 import yaml
@@ -12,6 +14,9 @@ from razdel import sentenize
 from natasha import NamesExtractor
 
 from disambiguator.db import RutezDB
+
+logger = logging.getLogger('processor')
+logger.setLevel(level=logging.INFO)
 
 with open("config.yml", 'r') as config_file:
     config = yaml.load(config_file)
@@ -107,19 +112,17 @@ class TextProcessor:
                 )
         return result
     
-    def predict_simple(self, json_corpus, scorer, window_size=10, context_window_size=2,
-                       max_relation_order=4, scorer_params=None):
+    def predict_simple(self, json_corpus, window_size=10, context_window_size=2, max_relation_order=4):
         corpus = json.load(open(json_corpus, 'r'))
         result = []
 
-        for document_idx, document in enumerate(corpus):
+        for document_idx, document in enumerate(tqdm(corpus)):
             tokens = self.morph_tokenize(document)
             document_length = len(tokens)
             sentences = list(sentenize(document))
             query_items = [str(token.id) for token in tokens if token.is_polysemous == 1]
             close_words, close_words_to_meaning, meaning_id_to_word = \
                 self.db.select_close_words(query_items, max_relation_order)
-
             for token_idx, token in enumerate(tokens):
                 if token.is_polysemous == 1:
                     containing_sentence = self._find_containing_sentences(sentences, token, k=1)
@@ -143,30 +146,51 @@ class TextProcessor:
                                 document_length, search_window, 'form', search_token
                             )
 
-                            score = scorer(search_context_window, token_context_window, scorer_params)
-
                             result.append(
                                 dict(
                                     document=document_idx,
                                     text_position=str(list(token.span)),
                                     meaning=meaning,
-                                    baseline=score,
-                                    text=containing_sentence
+                                    text=containing_sentence,
+                                    search_context_window=search_context_window,
+                                    token_context_window=token_context_window
                                 )
                             )
+        result = pd.DataFrame(result)
+        return result
 
-            result = pd.DataFrame(result)
-            return result
+    @staticmethod
+    def _count_score(scorer, scorer_params, data):
+        result = []
+        for search_window, token_window in data:
+            score = scorer(search_window, token_window, scorer_params)
+            result.append(score)
+        return result
 
-    def precision_recall_score(self, df_pred, df_true, score_threshold=0):
-        merged = df_true.merge(df_pred, on=['document', 'text_position'])
+    def precision_recall_score(self, scorer, scorer_params, df_pred, df_true, score_threshold=0):
+        prediction = df_pred.copy()
+        prediction['score'] = pd.Series(
+            self._count_score(
+                scorer,
+                scorer_params,
+                prediction[['search_context_window', 'token_context_window']].values
+            )
+        )
+        prediction.drop(['search_context_window', 'token_context_window'], axis=1, inplace=True)
+        merged = df_true.merge(prediction, on=['document', 'text_position'])
+
         if score_threshold == 0:
             true_pred = merged[merged['meaning'] == merged['annotation']].shape[0]
             total_pred = merged.shape[0]
         else:
             true_pred = merged[(merged['meaning'] == merged['annotation']) &
-                               (merged['baseline'] >= score_threshold)].shape[0]
-            total_pred = merged[merged['baseline'] >= score_threshold].shape[0]
+                               (merged['score'] >= score_threshold)].shape[0]
+            total_pred = merged[merged['score'] >= score_threshold].shape[0]
+
+        if total_pred == 0:
+            return 0, 0, 0
+
+        logger.info(total_pred.shape[0])
         precision = true_pred * 100 / total_pred
         merged.drop('meaning', axis=1, inplace=True)
         merged.drop_duplicates(inplace=True)
