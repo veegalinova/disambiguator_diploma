@@ -158,12 +158,11 @@ if __name__ == '__main__':
                     best_score = precision, recall
                     best_params = params
 
+                pd.DataFrame(scores).to_csv(config['log_file'])
+
         logger.info(model)
         logger.info(best_params)
         logger.info(best_score)
-
-    scores = pd.DataFrame(scores)
-    scores.to_csv(config['log_file'])
 
     logger.info(best_params)
     logger.info(best_score)
