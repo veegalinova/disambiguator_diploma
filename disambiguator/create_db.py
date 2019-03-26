@@ -98,7 +98,6 @@ class DBCreator:
 
     def load_concepts(self):
         with open(join(config['rutez_dir'], 'concepts.xml'), 'r', encoding="utf-8") as concepts:
-            self.cursor.execute('begin')
             for _ in concepts:
                 line = self._file_window(concepts, 5)
                 search_line = CONCEPTS_PATTERN.search(line)
@@ -107,11 +106,10 @@ class DBCreator:
                 self.cursor.execute("""
                 INSERT INTO concepts(id, name, gloss, domain) VALUES (?, ?, ?, ?)
                 """, [search_line.group(1), search_line.group(2), search_line.group(3), search_line.group(4)])
-            self.cursor.execute('commit')
+            self.conn.commit()
 
     def load_relations(self):
         with open(join(config['rutez_dir'], 'relations.xml'), 'r', encoding="utf-8") as relations:
-            self.cursor.execute('begin')
             for line in relations:
                 from_search = FROM_PATTERN.search(line) or None
                 if from_search is None:
@@ -126,11 +124,10 @@ class DBCreator:
                     INSERT INTO relations(id_from, id_to, name, asp) 
                     VALUES (?, ?, ?, ?)""", [from_search, to_search, name_search, asp_search]
                                     )
-            self.cursor.execute('commit')
+            self.conn.commit()
 
     def load_synonyms(self):
         with open(join(config['rutez_dir'], 'synonyms.xml'), 'r', encoding="utf-8") as synonyms:
-            self.cursor.execute('begin')
             for line in synonyms:
                 id_search = ID_PATTERN.search(line) or None
                 entry_id_search = ENTRY_ID_PATTERN.search(line) or None
@@ -142,7 +139,7 @@ class DBCreator:
                     INSERT INTO synonyms(concept_id, entry_id)
                     VALUES (?, ?)""", [id_search, entry_id_search]
                                     )
-            self.cursor.execute('commit')
+            self.conn.commit()
 
     def _delete_duplicates(self):
         self.cursor.execute("""
@@ -167,7 +164,6 @@ class DBCreator:
         """.format(order, order-1))
 
     def load_entries(self):
-        self.cursor.execute('begin')
         with open(join(config['rutez_dir'], 'text_entry.xml'), 'r', encoding="utf-8") as text_entry:
             for _ in text_entry:
                 line = self._file_window(text_entry, 7)
@@ -187,8 +183,7 @@ class DBCreator:
                                         0
                                     ]
                                     )
-        self.cursor.execute('commit')
-        self.cursor.execute('begin')
+        self.conn.commit()
         self.cursor.execute("""
                 UPDATE text_entry SET is_polysemic = 1
                 WHERE text_entry.entry_id in(
@@ -198,7 +193,7 @@ class DBCreator:
                     HAVING COUNT(*) > 1
                 )
                 """)
-        self.cursor.execute('commit')
+        self.conn.commit()
 
     def load_close_words(self):
         self.cursor.execute("""
@@ -209,8 +204,6 @@ class DBCreator:
           entry_id_to integer, 
           relation_order integer
         );""")
-
-        self.cursor.execute('begin')
 
         self.cursor.execute("""
          INSERT INTO close_words
@@ -235,7 +228,7 @@ class DBCreator:
         self._delete_duplicates()
         logger.info('4th relation')
 
-        self.cursor.execute('commit')
+        self.conn.commit()
 
 
 def create_database():
