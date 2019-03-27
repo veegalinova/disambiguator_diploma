@@ -28,18 +28,18 @@ class W2VScorer:
     @staticmethod
     def concatenation(context_vectors, window_size):
         result = context_vectors.copy()
-        if hasattr(context_vectors, 'shape'):
+        if context_vectors.size != 0:
             vector_dim = context_vectors.shape[1]
             for _ in range(window_size * 2 - context_vectors.shape[0]):
                 result = np.append(result, [np.zeros(vector_dim)], axis=0)
             vector = result.flatten()
         else:
-            vector = np.zeros(DEFAULT_DIM)
+            vector = np.zeros(2 * DEFAULT_DIM * window_size)
         return vector
 
     @staticmethod
     def average(context_vectors):
-        vector = context_vectors.sum(axis=0) / context_vectors.shape[0]
+        vector = context_vectors.mean(axis=0)
         return vector
 
     @staticmethod
@@ -125,10 +125,10 @@ if __name__ == '__main__':
         w2v_scorer = W2VScorer(model).scorer
         scorers = {
             'intersection': intersection_scorer,
-            'average': w2v_scorer,
+            'concatenation': w2v_scorer,
             'exponential': w2v_scorer,
             'fractional': w2v_scorer,
-            'concatenation': w2v_scorer
+            'average': w2v_scorer
         }
         n_experiments = len(ParameterGrid(grid_params))
 

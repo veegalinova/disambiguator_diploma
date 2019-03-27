@@ -7,7 +7,7 @@ class RutezDB:
 
     def select_words_db_ids(self, words):
         query_params = ','.join(['\'' + word.upper() + '\'' for word in words])
-        query = """ SELECT entry_id, name, is_polysemic 
+        query = """ SELECT entry, name, is_polysemic 
                     FROM text_entry 
                     WHERE name in ({}) """
         self.cursor.execute(query.format(query_params))
@@ -21,10 +21,10 @@ class RutezDB:
                            entry_id_to as close_word_id, 
                            close_words.id_from as meaning_id, 
                            concepts.name as meaning_name
-                    FROM close_words
+                    FROM relations_from_meanings as close_words
                     INNER JOIN concepts on id_from = concepts.id
-                    INNER JOIN text_entry text_entry_to on text_entry_to.entry_id = entry_id_to
-                    WHERE close_words.relation_order <= {0} and base_id in ({1}) """
+                    INNER JOIN text_entry text_entry_to on text_entry_to.entry = entry_id_to
+                    WHERE base_id in ({1}) """
         self.cursor.execute(query.format(max_relation_order, query_params))
         rows = self.cursor.fetchall()
 
@@ -51,7 +51,7 @@ class RutezDB:
     def select_poly_entries_meanings(self, words=None, ids=None):
         if words:
             query_params = ','.join(['\'' + word.upper() + '\'' for word in words])
-            query = """ SELECT entry_id
+            query = """ SELECT entry
                         FROM text_entry 
                         WHERE name in ({}) """
             self.cursor.execute(query.format(query_params))
@@ -62,9 +62,9 @@ class RutezDB:
         query_params = ','.join(ids)
         query = """ SELECT DISTINCT close_words.entry_id as base_id, text_entry.name as base, 
                         concepts.name as meaning, close_words.id_from as meaning_id 
-                    FROM close_words 
+                    FROM relations_from_meanings as close_words 
                     INNER JOIN concepts on id_from = concepts.id 
-                    INNER JOIN text_entry on entry_id = text_entry.entry_id
+                    INNER JOIN text_entry on entry_id = text_entry.entry
                     WHERE entry_id in ({}) """
         self.cursor.execute(query.format(query_params))
         rows = self.cursor.fetchall()

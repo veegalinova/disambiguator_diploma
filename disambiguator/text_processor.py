@@ -152,6 +152,7 @@ class TextProcessor:
                             result.append(
                                 dict(
                                     document=document_idx,
+                                    word=token.text,
                                     text_position=str(list(token.span)),
                                     meaning=meaning,
                                     text=containing_sentence,
@@ -160,6 +161,7 @@ class TextProcessor:
                                 )
                             )
         result = pd.DataFrame(result)
+        result.to_csv('flt_res.csv')
         return result
 
     @staticmethod
@@ -181,6 +183,9 @@ class TextProcessor:
             name='score'
         )
         prediction.drop(['search_context_window', 'token_context_window'], axis=1, inplace=True)
+        prediction.sort_values(['document', 'text_position', 'score'], ascending=[False, False, True], inplace=True)
+        prediction.drop_duplicates(subset=['document', 'text_position'], inplace=True)
+
         merged = df_true.merge(prediction, on=['document', 'text_position'])
 
         if score_threshold == 0:
