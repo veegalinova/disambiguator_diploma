@@ -7,6 +7,8 @@ from sklearn.model_selection import ParameterGrid
 
 from disambiguator.text_processor import *
 
+DEFAULT_DIM = 300
+
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger('runner')
 logger.setLevel(level=logging.INFO)
@@ -26,10 +28,13 @@ class W2VScorer:
     @staticmethod
     def concatenation(context_vectors, window_size):
         result = context_vectors.copy()
-        vector_dim = context_vectors.shape[1]
-        for _ in range(window_size * 2 - context_vectors.shape[0]):
-            result = np.append(result, [np.zeros(vector_dim)], axis=0)
-        vector = result.flatten()
+        if hasattr(context_vectors, 'shape'):
+            vector_dim = context_vectors.shape[1]
+            for _ in range(window_size * 2 - context_vectors.shape[0]):
+                result = np.append(result, [np.zeros(vector_dim)], axis=0)
+            vector = result.flatten()
+        else:
+            vector = np.zeros(DEFAULT_DIM)
         return vector
 
     @staticmethod
@@ -49,12 +54,12 @@ class W2VScorer:
         return vector
 
     @staticmethod
-    def inverse_fractional_decay(context_vectors):
+    def exponential_decay(context_vectors):
         window_size = context_vectors.shape[0] // 2
-        multiplier_matrix = np.array([
-            1 / abs(window_size + 1 - abs(i)) for i in range(-window_size, window_size + 1) if i != 0],
-            dtype=np.float32
-        )
+        alpha = 1 - 0.1 ** (1 / max(1, window_size - 1))
+        multiplier = np.repeat(1 - alpha, 2 * window_size)
+        matrix = np.array([i - 1 for i in range(-1 * window_size, window_size + 1) if i != 0])
+        multiplier_matrix = multiplier ** matrix
         vector = (context_vectors.T * multiplier_matrix).T.sum(axis=0)
         return vector
 
@@ -93,9 +98,9 @@ class W2VScorer:
             vector1 = self.fractional_decay(vector1)
             vector2 = self.fractional_decay(vector2)
 
-        if strategy == 'inverse_fractional':
-            vector1 = self.inverse_fractional_decay(vector1)
-            vector2 = self.inverse_fractional_decay(vector2)
+        if strategy == 'exponential':
+            vector1 = self.exponential_decay(vector1)
+            vector2 = self.exponential_decay(vector2)
 
         score = self.cosine_similarity(vector1, vector2)
         return score
@@ -108,23 +113,26 @@ if __name__ == '__main__':
     annotation = pd.read_csv(config['annotation'])
     annotation['text_position'] = annotation['text_position'].apply(str)
 
-    best_params, best_score, best_f = 0, 0, 0
+    best_params, best_score, best_p = 0, 0, 0
     grid_params = dict(
-        window_size=[10, 15, 20],
-        context_window_size=[2, 3, 4, 5, 10],
-        max_relation_order=[2, 3, 4],
-        threshold=[0.3, 0.4, 0.5, 0.6, 0.7]
+        window_size=config['window_size'],
+        context_window_size=config['context_window_size'],
+        max_relation_order=config['max_relation_order'],
+        threshold=config['threshold']
     )
 
     for model in models:
         w2v_scorer = W2VScorer(model).scorer
         scorers = {
-            'concatenation': w2v_scorer,
+            'intersection': intersection_scorer,
             'average': w2v_scorer,
-            'intersection': intersection_scorer
+            'exponential': w2v_scorer,
+            'fractional': w2v_scorer,
+            'concatenation': w2v_scorer
         }
+        n_experiments = len(ParameterGrid(grid_params))
 
-        for params in ParameterGrid(grid_params):
+        for i, params in enumerate(ParameterGrid(grid_params)):
             prediction = processor.predict_simple(
                 json_corpus=config['corpus'],
                 window_size=params['window_size'],
@@ -147,22 +155,20 @@ if __name__ == '__main__':
                         strategy=params['strategy'],
                         window_size=params['window_size'],
                         context_window_size=params['context_window_size'],
+                        max_relation_order=params['max_relation_order'],
                         threshold=params['threshold'],
                         precision=precision,
                         recall=recall
                     )
                 )
 
-                if f1 > best_f:
-                    best_f = f1
+                logger.info("{0}/{1}, {2}: {3} \n".format(i + 1, n_experiments, strategy, precision))
+
+                if best_p < precision < 100:
+                    best_p = precision
                     best_score = precision, recall
                     best_params = params
-
                 pd.DataFrame(scores).to_csv(config['log_file'])
 
-        logger.info(model)
-        logger.info(best_params)
-        logger.info(best_score)
-
-    logger.info(best_params)
-    logger.info(best_score)
+            logger.info("\n{0}: {1}, {2}\n".format(model, best_params, best_score))
+    logger.info("\n\n{0}, {1}".format(best_params, best_score))

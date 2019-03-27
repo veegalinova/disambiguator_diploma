@@ -57,15 +57,18 @@ class TextProcessor:
             result.extend(text[start: stop].lower().split(' '))
         return result
 
-    # todo: implement k
     @staticmethod
     def _find_containing_sentences(sentences, token, k):
-        containing_sentence = [
-            sentence.text
-            for sentence in sentences
+        sentence_border = k // 2
+        sentence_index = [
+            index
+            for index, sentence in enumerate(sentences)
             if sentence.start <= token.span[0] and sentence.stop >= token.span[1]
         ][0]
-        return containing_sentence
+        start_sentence = max(0, sentence_index - sentence_border)
+        end_sentence = min(len(sentences), sentence_index + sentence_border + 1)
+        result = ' '.join(sentence.text for sentence in sentences[start_sentence: end_sentence])
+        return result
 
     @staticmethod
     def _make_text_window(idx, size, min_idx, max_idx, tokens, type_, skip=None):
@@ -116,7 +119,7 @@ class TextProcessor:
         corpus = json.load(open(json_corpus, 'r', encoding='utf-8'))
         result = []
 
-        for document_idx, document in enumerate(corpus):
+        for document_idx, document in enumerate(tqdm(corpus)):
             tokens = self.morph_tokenize(document)
             document_length = len(tokens)
             sentences = list(sentenize(document))
@@ -125,7 +128,7 @@ class TextProcessor:
                 self.db.select_close_words(query_items, max_relation_order)
             for token_idx, token in enumerate(tokens):
                 if token.is_polysemous == 1:
-                    containing_sentence = self._find_containing_sentences(sentences, token, k=1)
+                    containing_sentence = self._find_containing_sentences(sentences, token, k=3)
                     token_close_words = close_words.get(token.id)
 
                     search_window = self._make_text_window(
@@ -191,10 +194,11 @@ class TextProcessor:
         if total_pred == 0:
             return 0, 0, 0
 
-        logger.info(total_pred)
+        logger.info('Total words predicted: {0}'.format(total_pred))
         precision = true_pred * 100 / total_pred
         merged.drop('meaning', axis=1, inplace=True)
         merged.drop_duplicates(inplace=True)
+        total_pred = merged[merged['score'] >= score_threshold].shape[0]
         recall = total_pred * 100 / df_true.shape[0]
         f_score = 2 * precision * recall / (precision + recall)
 
