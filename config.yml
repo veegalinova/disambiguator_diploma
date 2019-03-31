@@ -1,37 +1,24 @@
 database: 'data/rutez_db/rutez.db'
 rutez_dir: 'data/rutez_xml/'
-text: 'data/para.csv'
-corpus: 'data/corpus/flt.json'
-annotation: 'data/annotation/flt.csv'
+corpus: 'data/corpus/aviabasa.json'
 log_file: 'ex1_logs.csv'
+output: 'result_avia.csv'
 
 models:
-  - 'data/models/news_upos_skipgram_300_5_2019.zip'
   - 'data/models/ruscorpora_upos_cbow_300_20_2019.zip'
-  - 'data/models/tayga_upos_skipgram_300_2_2019.zip'
 
 window_size:
-  - 10
-  - 15
   - 20
 
 context_window_size:
-  - 2
-  - 3
   - 4
-  - 5
+
 
 max_relation_order:
   - 2
 
 threshold:
-  - 0.1
-  - 0.2
-  - 0.3
-  - 0.4
   - 0.5
-  - 0.6
-  - 0.7
 
 word_type_mapping:
   INFN: VERB

@@ -172,15 +172,6 @@ class TextProcessor:
             result.append(score)
         return result
 
-    @staticmethod
-    def _find_word_position_in_sentence(data):
-        result = []
-        for word, text in data:
-            start = text.find(word)
-            end = start + len(word)
-            result.append((start, end))
-        return pd.Series(result)
-
     def result_to_file(self, scorer, scorer_params, df_pred, score_threshold=0):
         prediction = df_pred.copy()
         prediction['score'] = pd.Series(
@@ -196,7 +187,6 @@ class TextProcessor:
         prediction.drop_duplicates(subset=['document', 'text_position'], inplace=True)
         result = prediction[prediction['score'] >= score_threshold]
         result = result[['normalized', 'word', 'meaning', 'text']]
-        result['position'] = self._find_word_position_in_sentence(result[['word', 'text']].values)
         result.to_csv(config['output'], index=False)
         return result
 
