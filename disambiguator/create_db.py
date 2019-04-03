@@ -1,7 +1,9 @@
 import re
 import yaml
 import logging
+from tqdm import tqdm
 import sqlite3
+import pymorphy2
 from os.path import join
 from collections import deque
 
@@ -35,22 +37,24 @@ CONCEPTS_PATTERN = re.compile(
 
 
 class DBCreator:
-    def __init__(self):
+    def __init__(self, new=False):
         with sqlite3.connect(config['database']) as self.conn:
             self.cursor = self.conn.cursor()
-            logger.info('Created db')
-            self.create_tables()
-            logger.info('Created tables')
-            self.load_concepts()
-            logger.info('Filled concepts')
-            self.load_synonyms()
-            logger.info('Filled synonyms')
-            self.load_entries()
-            logger.info('Filled entries')
-            self.load_relations()
-            logger.info('Filled relations')
-            self.load_close_words()
-            logger.info('Filled close words')
+            # logger.info('Created db')
+            # self.create_tables()
+            # logger.info('Created tables')
+            # self.load_concepts()
+            # logger.info('Filled concepts')
+            # self.load_synonyms()
+            # logger.info('Filled synonyms')
+            # self.load_entries()
+            # logger.info('Filled entries')
+            # self.load_relations()
+            # logger.info('Filled relations')
+            # self.load_close_words()
+            # logger.info('Filled close words')
+            self.add_normal_form()
+            logger.info('Added normal form')
 
     def create_tables(self):
         self.cursor.execute("""
@@ -229,6 +233,40 @@ class DBCreator:
         logger.info('4th relation')
 
         self.conn.commit()
+
+    def add_normal_form(self):
+        morph = pymorphy2.MorphAnalyzer()
+        # self.cursor.execute("""
+        # ALTER TABLE text_entry
+        # ADD normal_form TEXT;
+        # """)
+        self.conn.isolation_level = None
+        self.cursor.execute("""
+        SELECT name
+        FROM text_entry
+        """)
+        names = self.cursor.fetchall()
+        result = {}
+        for name in names:
+            name = name[0]
+            if name:
+                words = name.split(' ')
+                words = [morph.parse(word)[0].normal_form for word in words]
+                result.update({name: ' '.join(words)})
+
+        self.cursor.execute('begin')
+        i = 0
+        for key, value in tqdm(result.items()):
+            self.cursor.execute("""
+            UPDATE text_entry 
+            SET normal_form = '{1}'
+            WHERE name = '{0}';
+            """.format(key.upper(), value.upper()))
+            i += 1
+            if not i % 1000:
+                self.cursor.execute('commit')
+                self.cursor.execute('begin')
+        self.cursor.execute('commit')
 
 
 def create_database():

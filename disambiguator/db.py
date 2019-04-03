@@ -9,7 +9,7 @@ class RutezDB:
         query_params = ','.join(['\'' + word.upper() + '\'' for word in words])
         query = """ SELECT entry, name, is_polysemic 
                     FROM text_entry 
-                    WHERE name in ({}) """
+                    WHERE normal_form in ({}) """
         self.cursor.execute(query.format(query_params))
         rows = self.cursor.fetchall()
         result = {word.lower(): (idx, poly) for idx, word, poly in rows}
@@ -53,7 +53,7 @@ class RutezDB:
             query_params = ','.join(['\'' + word.upper() + '\'' for word in words])
             query = """ SELECT entry
                         FROM text_entry 
-                        WHERE name in ({}) """
+                        WHERE normal_form in ({}) """
             self.cursor.execute(query.format(query_params))
             ids = self.cursor.fetchall()
             ids = [str(id[0]) for id in ids]

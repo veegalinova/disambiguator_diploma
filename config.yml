@@ -1,24 +1,39 @@
 database: 'data/rutez_db/rutez.db'
 rutez_dir: 'data/rutez_xml/'
-corpus: 'data/corpus/aviabasa.json'
+corpus: 'data/corpus/lugovoy_corpus.json'
+annotation: 'data/annotation/lugovoy_ann.csv'
 log_file: 'ex1_logs.csv'
-output: 'result_avia.csv'
+output: 't.csv'
 
 models:
   - 'data/models/ruscorpora_upos_cbow_300_20_2019.zip'
 
 window_size:
+  - 5
+  - 6
+  - 7
+  - 8
+  - 9
+  - 10
+  - 11
+  - 12
+  - 13
+  - 14
+  - 15
+  - 16
+  - 17
+  - 18
+  - 19
   - 20
 
 context_window_size:
-  - 4
-
+  - 3
 
 max_relation_order:
   - 2
 
 threshold:
-  - 0.5
+  - 0.2
 
 word_type_mapping:
   INFN: VERB

@@ -4,6 +4,9 @@ import json
 import logging
 from tqdm import tqdm
 from collections import namedtuple
+from functools import reduce
+import operator
+
 
 import yaml
 import pandas as pd
@@ -30,7 +33,8 @@ Item = namedtuple('Item', [
     'span',
     'normal_form',
     'is_polysemous',
-    'is_stopword'
+    'is_stopword',
+    'is_ngram'
 ])
 
 
@@ -76,12 +80,70 @@ class TextProcessor:
         window_start = max(min_idx, idx - size)
         window_end = min(max_idx, idx + size + 1)
         if type_ == 'token':
-            window = [t for t in tokens[window_start: window_end] if t != skip]
+            window = [t for token in tokens[window_start: window_end] for t in [token] if t != skip]
         elif type_ == 'text':
-            window = [t.normal_form for t in tokens[window_start: window_end] if t != skip]
+            window = [t.normal_form for token in tokens[window_start: window_end] for t in [token] if t != skip]
         elif type_ == 'form':
-            window = [t.normal_form + '_' + t.type for t in tokens[window_start: window_end] if t != skip]
+            window = [t.type for token in tokens[window_start: window_end] for t in [token] if t != skip]
+            window = reduce(operator.concat, window)
         return window
+
+    def _find_ngrams(self, ids, tokens, text_tokens, n):
+        result = []
+        for n_gram, text_ngram in zip(tokens, text_tokens):
+            id_, is_poly = ids.get(text_ngram, (None, None))
+            if id_:
+                if n > 1:
+                    text = ' '.join([token.value for token in n_gram])
+                    span = (n_gram[0].span[0], n_gram[n-1].span[1])
+                    normalized = ' '.join([token.normalized for token in n_gram])
+                    word_type = []
+                    for gram in n_gram:
+                        word_type.append(
+                            gram.normalized + '_' + [
+                            word_type_mapping.get(form, form)
+                            for form in list(gram.forms[0].grams.values)
+                            if form.isupper()][0]
+                        )
+                    is_stopword = 0
+                    is_ngram = 1
+                else:
+                    text = n_gram.value
+                    span = n_gram.span
+                    normalized = n_gram.normalized
+                    word_type = [normalized + '_' + [
+                        word_type_mapping.get(form, form)
+                        for form in list(n_gram.forms[0].grams.values)
+                        if form.isupper()
+                    ][0]]
+                    is_stopword = text_ngram in self.stop_words
+                    is_ngram = 0
+
+                result.append(
+                    Item(
+                        id_,
+                        text,
+                        word_type,
+                        span,
+                        normalized,
+                        is_poly,
+                        is_stopword,
+                        is_ngram
+                    )
+                )
+        return result
+
+    @staticmethod
+    def sort_tokens(list_):
+        list_.sort(key=lambda x: (x.span[0], -x.span[1]))
+        previous_span = list_[0].span
+        for item in list_[1:]:
+            span = item.span
+            if span[0] >= previous_span[0] and span[1] <= previous_span[1]:
+                list_.remove(item)
+            else:
+                previous_span = span
+        return list_
 
     def morph_tokenize(self, text):
         result = []
@@ -89,30 +151,29 @@ class TextProcessor:
         text = text.lower()
         tokens = list(self.morph_tokenizer(text))
 
-        tokens = [token for token in tokens if token.value not in self.stop_words and token.value not in named_entities]
-        query_items = [token.normalized for token in tokens]
-        ids = self.db.select_words_db_ids(query_items)
-        for token in tokens:
-            id_, is_poly = ids.get(token.normalized, (None, None))
-            if token.value not in self.stop_words:
-                if hasattr(token, 'forms'):
-                    word_type = [
-                        word_type_mapping.get(form, form)
-                        for form in list(token.forms[0].grams.values)
-                        if form.isupper()
-                    ][0]
+        tokens = [
+            token for token in tokens
+            if token.value not in [s for s in string.punctuation]
+               and token.value not in named_entities
+        ]
 
-                result.append(
-                    Item(
-                        id_,
-                        token.value,
-                        word_type or None,
-                        token.span,
-                        token.normalized,
-                        is_poly,
-                        token.normalized is stopwords
-                    )
-                )
+        unigrams = [token for token in tokens]
+        bigrams = [unigrams[i:i + 2] for i in range(len(unigrams) - 1)]
+        trigrams = [unigrams[i:i + 3] for i in range(len(unigrams) - 2)]
+
+        text_unigrams = [token.normalized for token in unigrams]
+        text_bigrams = [text_unigrams[i:i + 2] for i in range(len(text_unigrams) - 1)]
+        text_bigrams = [' '.join(bigram) for bigram in text_bigrams]
+        text_trigrams = [text_unigrams[i:i + 3] for i in range(len(text_unigrams) - 2)]
+        text_trigrams = [' '.join(trigram) for trigram in text_trigrams]
+        words = text_unigrams + text_bigrams + text_trigrams
+
+        ids = self.db.select_words_db_ids(words)
+
+        result = result + self._find_ngrams(ids, trigrams, text_trigrams, 3)
+        result = result + self._find_ngrams(ids, bigrams, text_bigrams, 2)
+        result = result + self._find_ngrams(ids, unigrams, text_unigrams, 1)
+        result = self.sort_tokens(result)
         return result
     
     def predict_simple(self, json_corpus, window_size=10, context_window_size=2, max_relation_order=4):

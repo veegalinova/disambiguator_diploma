@@ -11,7 +11,7 @@ logger.setLevel(level=logging.INFO)
 if __name__ == '__main__':
     processor = TextProcessor(config['database'])
     model = config['models'][0]
-    w2v_scorer = W2VScorer(model).scorer
+    w2v_scorer = intersection_scorer
     prediction = processor.predict_simple(
                 json_corpus=config['corpus'],
                 window_size=config['window_size'][0],

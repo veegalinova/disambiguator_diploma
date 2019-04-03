@@ -30,7 +30,7 @@ class W2VScorer:
         result = context_vectors.copy()
         if context_vectors.size != 0:
             vector_dim = context_vectors.shape[1]
-            for _ in range(window_size * 2 - context_vectors.shape[0]):
+            for _ in range(window_size * 2 - context_vectors.shape[0] + 2):
                 result = np.append(result, [np.zeros(vector_dim)], axis=0)
             vector = result.flatten()
         else:
