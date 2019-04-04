@@ -30,7 +30,7 @@ class W2VScorer:
         result = context_vectors.copy()
         if context_vectors.size != 0:
             vector_dim = context_vectors.shape[1]
-            for _ in range(window_size * 2 - context_vectors.shape[0] + 2):
+            for _ in range(window_size * 2 - context_vectors.shape[0]):
                 result = np.append(result, [np.zeros(vector_dim)], axis=0)
             vector = result.flatten()
         else:
@@ -118,6 +118,7 @@ if __name__ == '__main__':
         window_size=config['window_size'],
         context_window_size=config['context_window_size'],
         max_relation_order=config['max_relation_order'],
+        use_bigrams=config['use_bigrams'],
         threshold=config['threshold']
     )
 
@@ -136,7 +137,8 @@ if __name__ == '__main__':
             prediction = processor.predict_simple(
                 json_corpus=config['corpus'],
                 window_size=params['window_size'],
-                context_window_size=params['context_window_size']
+                context_window_size=params['context_window_size'],
+                use_bigrams=params['use_bigrams']
             )
             for strategy, scorer_ in scorers.items():
                 scorer_params = strategy, params['context_window_size']

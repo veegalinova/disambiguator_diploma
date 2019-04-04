@@ -4,9 +4,6 @@ import json
 import logging
 from tqdm import tqdm
 from collections import namedtuple
-from functools import reduce
-import operator
-
 
 import yaml
 import pandas as pd
@@ -80,12 +77,11 @@ class TextProcessor:
         window_start = max(min_idx, idx - size)
         window_end = min(max_idx, idx + size + 1)
         if type_ == 'token':
-            window = [t for token in tokens[window_start: window_end] for t in [token] if t != skip]
+            window = [t for t in tokens[window_start: window_end] if t != skip]
         elif type_ == 'text':
-            window = [t.normal_form for token in tokens[window_start: window_end] for t in [token] if t != skip]
+            window = [t.normal_form for t in tokens[window_start: window_end] if t != skip]
         elif type_ == 'form':
-            window = [t.type for token in tokens[window_start: window_end] for t in [token] if t != skip]
-            window = reduce(operator.concat, window)
+            window = [t.type for t in tokens[window_start: window_end] if t != skip]
         return window
 
     def _find_ngrams(self, ids, tokens, text_tokens, n):
@@ -97,25 +93,18 @@ class TextProcessor:
                     text = ' '.join([token.value for token in n_gram])
                     span = (n_gram[0].span[0], n_gram[n-1].span[1])
                     normalized = ' '.join([token.normalized for token in n_gram])
-                    word_type = []
-                    for gram in n_gram:
-                        word_type.append(
-                            gram.normalized + '_' + [
-                            word_type_mapping.get(form, form)
-                            for form in list(gram.forms[0].grams.values)
-                            if form.isupper()][0]
-                        )
+                    word_type = None
                     is_stopword = 0
                     is_ngram = 1
                 else:
                     text = n_gram.value
                     span = n_gram.span
                     normalized = n_gram.normalized
-                    word_type = [normalized + '_' + [
+                    word_type = normalized + '_' + [
                         word_type_mapping.get(form, form)
                         for form in list(n_gram.forms[0].grams.values)
                         if form.isupper()
-                    ][0]]
+                    ][0]
                     is_stopword = text_ngram in self.stop_words
                     is_ngram = 0
 
@@ -135,17 +124,21 @@ class TextProcessor:
 
     @staticmethod
     def sort_tokens(list_):
-        list_.sort(key=lambda x: (x.span[0], -x.span[1]))
+        to_remove = []
+        list_.sort(key=lambda x: (x.span[0], x.span[1]))
         previous_span = list_[0].span
-        for item in list_[1:]:
+        for i, item in enumerate(list_[1: -2]):
             span = item.span
-            if span[0] >= previous_span[0] and span[1] <= previous_span[1]:
-                list_.remove(item)
+            if span[0] <= previous_span[0] and span[1] >= previous_span[1]:
+                list_[i] = list_[i]._replace(id=item.id, is_polysemous=item.is_polysemous)
+                list_[i + 2] = list_[i + 2]._replace(id=item.id, is_polysemous=item.is_polysemous)
+                to_remove.append(item)
             else:
                 previous_span = span
+        [list_.remove(x) for x in to_remove]
         return list_
 
-    def morph_tokenize(self, text):
+    def morph_tokenize(self, text, use_bigrams=False):
         result = []
         named_entities = self._find_named_entities(text)
         text = text.lower()
@@ -158,30 +151,33 @@ class TextProcessor:
         ]
 
         unigrams = [token for token in tokens]
-        bigrams = [unigrams[i:i + 2] for i in range(len(unigrams) - 1)]
-        trigrams = [unigrams[i:i + 3] for i in range(len(unigrams) - 2)]
-
         text_unigrams = [token.normalized for token in unigrams]
-        text_bigrams = [text_unigrams[i:i + 2] for i in range(len(text_unigrams) - 1)]
-        text_bigrams = [' '.join(bigram) for bigram in text_bigrams]
-        text_trigrams = [text_unigrams[i:i + 3] for i in range(len(text_unigrams) - 2)]
-        text_trigrams = [' '.join(trigram) for trigram in text_trigrams]
-        words = text_unigrams + text_bigrams + text_trigrams
+        words = text_unigrams
 
-        ids = self.db.select_words_db_ids(words)
+        if use_bigrams:
+            bigrams = [unigrams[i:i + 2] for i in range(len(unigrams) - 1)]
+            text_bigrams = [text_unigrams[i:i + 2] for i in range(len(text_unigrams) - 1)]
+            text_bigrams = [' '.join(bigram) for bigram in text_bigrams]
+            words = words + text_bigrams
+            ids = self.db.select_words_db_ids(words)
+            result = result + self._find_ngrams(ids, bigrams, text_bigrams, 2)
 
-        result = result + self._find_ngrams(ids, trigrams, text_trigrams, 3)
-        result = result + self._find_ngrams(ids, bigrams, text_bigrams, 2)
+        # text_trigrams = [text_unigrams[i:i + 3] for i in range(len(text_unigrams) - 2)]
+        # text_trigrams = [' '.join(trigram) for trigram in text_trigrams]
+        else:
+            ids = self.db.select_words_db_ids(words)
+
         result = result + self._find_ngrams(ids, unigrams, text_unigrams, 1)
         result = self.sort_tokens(result)
         return result
     
-    def predict_simple(self, json_corpus, window_size=10, context_window_size=2, max_relation_order=4):
+    def predict_simple(self, json_corpus, window_size=10,
+                       context_window_size=2, max_relation_order=4, use_bigrams=False):
         corpus = json.load(open(json_corpus, 'r', encoding='utf-8'))
         result = []
 
         for document_idx, document in enumerate(tqdm(corpus)):
-            tokens = self.morph_tokenize(document)
+            tokens = self.morph_tokenize(document, use_bigrams=use_bigrams)
             document_length = len(tokens)
             sentences = list(sentenize(document))
             query_items = [str(token.id) for token in tokens if token.is_polysemous == 1]
@@ -262,10 +258,10 @@ class TextProcessor:
             name='score'
         )
         prediction.drop(['search_context_window', 'token_context_window'], axis=1, inplace=True)
-        prediction.sort_values(['document', 'text_position', 'score'], ascending=[False, False, True], inplace=True)
-        prediction.drop_duplicates(subset=['document', 'text_position'], inplace=True)
 
-        merged = df_true.merge(prediction, on=['document', 'text_position'])
+        merged = prediction.merge(df_true, on=['document', 'text_position'])
+        merged.sort_values(['document', 'text_position', 'score'], ascending=[True, True, False], inplace=True)
+        merged.drop_duplicates(subset=['document', 'text_position'], inplace=True)
 
         if score_threshold == 0:
             true_pred = merged[merged['meaning'] == merged['annotation']].shape[0]

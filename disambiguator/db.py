@@ -7,7 +7,7 @@ class RutezDB:
 
     def select_words_db_ids(self, words):
         query_params = ','.join(['\'' + word.upper() + '\'' for word in words])
-        query = """ SELECT entry, name, is_polysemic 
+        query = """ SELECT entry, normal_form, is_polysemic 
                     FROM text_entry 
                     WHERE normal_form in ({}) """
         self.cursor.execute(query.format(query_params))
