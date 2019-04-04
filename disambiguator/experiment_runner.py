@@ -154,13 +154,14 @@ if __name__ == '__main__':
                 scores.append(
                     dict(
                         model=params['model'],
-                        strategy=params['strategy'],
+                        strategy=params['strategy'][0],
                         window_size=params['window_size'],
                         context_window_size=params['context_window_size'],
                         max_relation_order=params['max_relation_order'],
                         threshold=params['threshold'],
                         precision=precision,
-                        recall=recall
+                        recall=recall,
+                        has_bigrams=params['use_bigrams']
                     )
                 )
 
